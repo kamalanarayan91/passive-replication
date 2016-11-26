@@ -23,12 +23,13 @@ public class BankAccountI extends AbstractServer
     // need to know if primary
     private boolean isPrimary;
     private int lastReqId;
-
+    private Object operationsLock;
 
     public BankAccountI(Configuration config)
     {
         super(config);
         logLock = new Object();
+        operationsLock = new Object();
         logQueue = new PriorityQueue<Request>();
     }
 
@@ -43,22 +44,20 @@ public class BankAccountI extends AbstractServer
     @Override
     protected void handleBeginReadBalance(int reqid)
     {
-        if(isPrimary)
-        {
-            System.out.println("Begin Read - primary");
-            ctl.endReadBalance(reqid, balance);
+        synchronized (operationsLock) {
+            if (isPrimary) {
+                System.out.println("Begin Read - primary");
+                ctl.endReadBalance(reqid, balance);
 
-            //assumption - requests should be in order!
-            lastReqId = reqid;
-        }
-        else
-        {
-            //add to log
-            System.out.println("Begin Read - primary Backup?");
-            synchronized (logLock)
-            {
-                Request request = new Request(reqid, Request.READ);
-                logQueue.offer(request);
+                //assumption - requests should be in order!
+                lastReqId = reqid;
+            } else {
+                //add to log
+                System.out.println("Begin Read - primary Backup?");
+                synchronized (logLock) {
+                    Request request = new Request(reqid, Request.READ);
+                    logQueue.offer(request);
+                }
             }
         }
     }
@@ -66,22 +65,20 @@ public class BankAccountI extends AbstractServer
     @Override
     protected void handleBeginChangeBalance(int reqid, int update)
     {
-        if(isPrimary)
-        {
-            //assumption - requests should be in order!
-            balance += update;
-            lastReqId = reqid;
-            ctl.endChangeBalance(reqid, balance);
+        synchronized (operationsLock) {
+            if (isPrimary) {
+                //assumption - requests should be in order!
+                balance += update;
+                lastReqId = reqid;
+                ctl.endChangeBalance(reqid, balance);
 
-        }
-        else
-        {
-            //add to log
-            synchronized (logLock)
-            {
-                Request request = new Request(reqid, Request.CHANGE);
-                request.setUpdate(update);
-                logQueue.offer(request);
+            } else {
+                //add to log
+                synchronized (logLock) {
+                    Request request = new Request(reqid, Request.CHANGE);
+                    request.setUpdate(update);
+                    logQueue.offer(request);
+                }
             }
         }
     }
@@ -89,43 +86,51 @@ public class BankAccountI extends AbstractServer
     @Override
     protected Checkpoint handleGetState()
     {
-        return new Checkpoint(lastReqId,balance);
+        synchronized (operationsLock)
+        {
+            return new Checkpoint(lastReqId, balance);
+        }
     }
 
     @Override
     protected int handleSetState(Checkpoint checkpoint)
     {
-        balance = checkpoint.state;
-        lastReqId=checkpoint.reqid;
+        synchronized (operationsLock) {
+            balance = checkpoint.state;
+            lastReqId = checkpoint.reqid;
 
 
-        //prune log before checkpoint
-        int cpReqId = checkpoint.reqid;
+            //prune log before checkpoint
+            int cpReqId = checkpoint.reqid;
 
-        //return pruned log size
-        synchronized (logLock)
-        {
-            while(logQueue.peek().getRequestId()<cpReqId)
-            {
-                logQueue.poll();
+            //return pruned log size
+            synchronized (logLock) {
+
+                while (!logQueue.isEmpty() &&logQueue.peek().getRequestId() < cpReqId) {
+                    logQueue.poll();
+                }
             }
+            return logQueue.size();
         }
-        return logQueue.size();
     }
 
     @Override
     protected void handleSetPrimary()
     {
-        System.out.println("Set Primary!!!");
-        isPrimary=true;
-        return;
+        synchronized (operationsLock) {
+            System.out.println("Set Primary!!!");
+            isPrimary = true;
+            return;
+        }
     }
 
     @Override
     protected void handleSetBackup()
     {
-        System.out.println("Set Backup!!!");
-        isPrimary = false;
-        return;
+        synchronized (operationsLock) {
+            System.out.println("Set Backup!!!");
+            isPrimary = false;
+            return;
+        }
     }
 }

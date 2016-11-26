@@ -47,9 +47,9 @@ public class Server
         return serverObject.getState();
     }
 
-    protected void setState(int state) throws Exception
+    protected void setState(Checkpoint checkpoint) throws Exception
     {
-        Checkpoint checkpoint = new Checkpoint(0,state);
+
         serverObject.setState(checkpoint);
 
     }

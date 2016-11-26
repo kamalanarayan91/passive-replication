@@ -4,11 +4,9 @@ import IceInternal.Ex;
 import edu.cmu.rds749.common.AbstractProxy;
 import edu.cmu.rds749.common.BankAccountStub;
 import org.apache.commons.configuration2.Configuration;
+import rds749.Checkpoint;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.List;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 /**
  * Failure Modes.
@@ -34,6 +32,8 @@ public class Proxy extends AbstractProxy
     private Object operationsLock;
     private Object failOverLock;
     private HashSet<Integer> requestsDone;
+    private Timer timer;
+    private long checkpointFrequency;
 
     public Proxy(Configuration config)
     {
@@ -44,7 +44,10 @@ public class Proxy extends AbstractProxy
         failOverLock = new Object();
         requestsDone  = new HashSet<Integer>();
         serverMap = new HashMap<Long,Server>();
-
+        checkpointFrequency = config.getLong("checkpointFrequency");
+        timer = new Timer();
+        System.err.println("CP:"+checkpointFrequency);
+        timer.schedule(new CheckPointTask(),0,checkpointFrequency);
     }
 
     public void setPrimary(Server server)
@@ -56,7 +59,7 @@ public class Proxy extends AbstractProxy
     @Override
     protected void serverRegistered(long id, BankAccountStub stub)
     {
-        synchronized (operationsLock)
+        synchronized (failOverLock)
         {
             Server server = new Server(stub);
             server.setId(id);
@@ -389,6 +392,51 @@ public class Proxy extends AbstractProxy
                 System.out.println("Primary Failed -  Heartbeat");
                 primaryServer=null;
             }
+        }
+    }
+
+
+    //Timer Tasks
+    class CheckPointTask extends TimerTask
+    {
+
+        @Override
+        public void run()
+        {
+            synchronized (failOverLock)
+            {
+                Checkpoint checkpoint = null;
+                if(primaryServer!=null)
+                {
+                    try
+                    {
+                        checkpoint = primaryServer.getState();
+
+                    }
+                    catch (Exception e)
+                    {
+
+                    }
+                    System.err.println("Cp:"+checkpoint.reqid +" "+checkpoint.state);
+
+                    if(checkpoint!=null)
+                    {
+                        for (Server server : backupServers)
+                        {
+                            try
+                            {
+                                server.setState(checkpoint);
+                            }
+                            catch (Exception e)
+                            {
+
+                            }
+                        }
+                    }
+
+                }
+            }
+
         }
     }
 
