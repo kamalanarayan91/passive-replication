@@ -15,7 +15,7 @@ public class Request implements Comparable<Request>
     //only if it is update;
     private int update;
 
-    public Request(int requestType,int requestId)
+    public Request(int requestId,int requestType)
     {
         this.requestType = requestType;
         this.requestId = requestId;

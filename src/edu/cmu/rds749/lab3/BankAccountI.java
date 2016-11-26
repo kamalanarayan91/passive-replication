@@ -99,17 +99,24 @@ public class BankAccountI extends AbstractServer
             balance = checkpoint.state;
             lastReqId = checkpoint.reqid;
 
+            System.err.println("Cp received:" + balance + " last:"+lastReqId);
+
 
             //prune log before checkpoint
             int cpReqId = checkpoint.reqid;
 
-            //return pruned log size
-            synchronized (logLock) {
+            System.err.println("Original Size:"+ logQueue.size());
 
-                while (!logQueue.isEmpty() &&logQueue.peek().getRequestId() < cpReqId) {
+            //return pruned log size
+            synchronized (logLock)
+            {
+                while (!logQueue.isEmpty() &&logQueue.peek().getRequestId() <= cpReqId)
+                {
                     logQueue.poll();
                 }
             }
+
+            System.out.println("Pruned Size:"+ logQueue.size());
             return logQueue.size();
         }
     }
@@ -117,8 +124,28 @@ public class BankAccountI extends AbstractServer
     @Override
     protected void handleSetPrimary()
     {
-        synchronized (operationsLock) {
+        synchronized (operationsLock)
+        {
             System.out.println("Set Primary!!!");
+            //assumes cP is already applied
+            while(!logQueue.isEmpty())
+            {
+
+                Request head = logQueue.poll();
+
+                if(head.getRequestType() == Request.READ)
+                {
+                    System.err.println("Replay:" + head.getRequestId() +" READ");
+                    ctl.endReadBalance(head.getRequestId(),balance);
+                }
+                else
+                {
+                    System.err.println("Replay:" + head.getRequestId() +" UPDATE" + ":" + head.getUpdate());
+                    balance += head.getUpdate();
+                    ctl.endChangeBalance(head.getRequestId(),balance);
+                }
+
+            }
             isPrimary = true;
             return;
         }
@@ -127,8 +154,9 @@ public class BankAccountI extends AbstractServer
     @Override
     protected void handleSetBackup()
     {
-        synchronized (operationsLock) {
-            System.out.println("Set Backup!!!");
+        synchronized (operationsLock)
+        {
+            System.err.println("Set Backup!!!");
             isPrimary = false;
             return;
         }

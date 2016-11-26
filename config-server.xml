@@ -8,5 +8,5 @@
     <clientPort>9999</clientPort>
     <heartbeatIntervalMillis>1000</heartbeatIntervalMillis>
     <serverDelayMillis>0</serverDelayMillis>
-    <checkpointFrequency>5000</checkpointFrequency>
+    <checkpointFrequency>25000</checkpointFrequency>
 </configuration>

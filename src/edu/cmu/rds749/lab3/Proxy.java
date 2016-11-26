@@ -8,6 +8,7 @@ import rds749.Checkpoint;
 
 import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 /**
  * Failure Modes.
  * 1. Failure while making request
@@ -25,7 +26,7 @@ import java.util.concurrent.ConcurrentHashMap;
 public class Proxy extends AbstractProxy
 {
     // Server info
-    public ArrayList<Server> backupServers;
+    public CopyOnWriteArrayList<Server> backupServers;
     public HashMap<Long,Server> serverMap;
     public Server primaryServer;
 
@@ -39,14 +40,13 @@ public class Proxy extends AbstractProxy
     {
         super(config);
         primaryServer=null;
-        backupServers = new ArrayList<Server>();
+        backupServers = new CopyOnWriteArrayList<>();
         operationsLock = new Object();
         failOverLock = new Object();
         requestsDone  = new HashSet<Integer>();
         serverMap = new HashMap<Long,Server>();
         checkpointFrequency = config.getLong("checkpointFrequency");
         timer = new Timer();
-        System.err.println("CP:"+checkpointFrequency);
         timer.schedule(new CheckPointTask(),0,checkpointFrequency);
     }
 
@@ -330,6 +330,7 @@ public class Proxy extends AbstractProxy
             System.out.println("In End Read");
             if(requestsDone.contains(reqid))
             {
+                System.err.println("Duplicate Suppressed:" + reqid + " from:" + serverid );
                 return;
             }
 
@@ -348,6 +349,7 @@ public class Proxy extends AbstractProxy
             System.out.println("End Change Balance:");
             if(requestsDone.contains(reqid))
             {
+                System.err.println("Duplicate Suppressed:" + reqid + " from:" + serverid );
                 return;
             }
 
@@ -376,6 +378,8 @@ public class Proxy extends AbstractProxy
      */
     private void simpleFailOver(List<Long> failedServers)
     {
+        boolean primaryFailed = false;
+
         for(Long id: failedServers)
         {
 
@@ -389,8 +393,27 @@ public class Proxy extends AbstractProxy
 
             if(server==primaryServer)
             {
+                primaryFailed = true;
                 System.out.println("Primary Failed -  Heartbeat");
                 primaryServer=null;
+            }
+        }
+
+        if(primaryFailed)
+        {
+            for(Server server: backupServers){
+
+                try
+                {
+                    server.setPrimary();
+                    setPrimary(server);
+                    backupServers.remove(server);
+                }
+                catch (Exception e)
+                {
+                    e.printStackTrace();
+                    backupServers.remove(server);
+                }
             }
         }
     }
@@ -415,7 +438,7 @@ public class Proxy extends AbstractProxy
                     }
                     catch (Exception e)
                     {
-
+                        e.printStackTrace();
                     }
                     System.err.println("Cp:"+checkpoint.reqid +" "+checkpoint.state);
 
@@ -429,7 +452,8 @@ public class Proxy extends AbstractProxy
                             }
                             catch (Exception e)
                             {
-
+                                // not handled. other failure rotuines will
+                                e.printStackTrace();
                             }
                         }
                     }
